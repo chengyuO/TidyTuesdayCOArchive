@@ -1,13 +1,572 @@
 ---
-title: "Week of 18 May 2021"
+title: "Tidy Tuesday: Ask a Manager Survey"
 author: "Chengyu"
 date: "18/05/2021"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
+# Section 1: Set Up
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+library(magrittr)
+library(tidyverse)
+library(dplyr)
+library(tidytuesdayR)
+library(ggplot2)
+library(writexl)
+library(ggthemes)
+library(hrbrthemes)
+library(viridis)
+library(ggpubr)
+library(ggridges)
+library(broom)
+library(rgeos)
+library(geojsonio)
+library(RColorBrewer)
+library(rgdal)
+library(wesanderson)
+
+# Get the Data
+
+# Read in with tidytuesdayR package 
+# Install from CRAN via: install.packages("tidytuesdayR")
+# This loads the readme and all the datasets for the week of interest
+
+# Either ISO-8601 date or year/week works!
+
+tuesdata <- tidytuesdayR::tt_load('2021-05-18')
+tuesdata <- tidytuesdayR::tt_load(2021, week = 21)
+survey <- tuesdata$survey
 ```
 
-## R Markdown
+# Section 2: Data Cleaning
 
+```{r data cleaning, include=FALSE}
+survey %<>%
+  mutate_if(is.character, as.character()) %>%
+  arrange(country)
+
+survey$country %>%
+  unique()
+
+# Remove anything that is not letters, numbers or space
+survey$country %<>%
+  str_remove_all("[^A-Za-z0-9 ]") %>%
+  tolower()
+
+# Flag US country
+survey$US_flag <-
+  grepl("\\<us|\\<usa|united state|america", survey$country)
+
+# Age under 35
+survey_US_new <-
+  survey %>%
+  filter(US_flag) %>%
+  # filter(overall_years_of_professional_experience %in%
+  #                 c("1 year or less","2 - 4 years")) %>% 
+  filter(how_old_are_you %in% c("18-24", "25-34"))
+
+# c("1 year or less","2 - 4 years","5-7 years","8 - 10 years")
+
+# Currency
+survey_US_new$currency %>%
+  unique()
+
+survey_US_new %<>%
+  filter(currency == "USD")
+
+# Industry
+survey_US_new$industry %>%
+  sort() %>% 
+  unique()
+
+# Skipping cleaning here ;)
+survey_US_new %<>%
+  filter(industry == "Computing or Tech")
+
+# Gender
+survey_US_new$gender %>%
+  unique()
+
+survey_US_new$gender %<>%
+  forcats::fct_recode(Unknown = "Other or prefer not to answer",
+                      Unknown = "Prefer not to answer") %>%
+  forcats::fct_explicit_na(na_level = "Unknown") %>% 
+  factor(c("Man", "Woman", "Non-binary", "Unknown"))
+```
+
+# Section 3: EDA
+
+```{r eda, include=FALSE}
+survey_US_new %$%
+  table(gender, overall_years_of_professional_experience)
+
+survey_US_new %$%
+  table(highest_level_of_education_completed,
+        overall_years_of_professional_experience)
+
+survey_US_new$annual_salary %>%
+  summary()
+
+gender_summary_table =
+  survey_US_new %$%
+  tapply(annual_salary, gender, summary)
+
+experience_summary_table =
+  survey_US_new %$%
+  tapply(annual_salary, overall_years_of_professional_experience , summary)
+
+survey_US_new$overall_years_of_professional_experience %<>%
+  fct_recode(
+    `1 - 4 years` = "1 year or less",
+    `1 - 4 years` = "2 - 4 years",
+    `5 - 10 years` = "5-7 years",
+    `5 - 10 years` = "8 - 10 years",
+    `11 - 20 years` = "11 - 20 years",
+    `11 - 20 years` = "21 - 30 years"
+  ) %>%
+  factor(c("1 - 4 years",
+           "5 - 10 years",
+           "11 - 20 years"))
+
+survey_US_new$highest_level_of_education_completed %<>%
+  fct_recode(`Other` = "Some college" ,
+             `Other` = "Professional degree (MD, JD, etc.)",
+             `Other` = "High School") %>%
+  factor(c("PhD",
+           "Master's degree",
+           "College degree",
+           "Other"))
+
+survey_US_new$highest_level_of_education_completed %>%
+  unique()
+```
+
+## Gender Distribution
+
+Thanks [\@holtzy](https://github.com/holtzy/R-graph-gallery) for sharing codes in creating donut figures:)
+
+```{r gender donut}
+# Compute percentages
+gender_count <-
+  survey_US_new %>%
+  count(gender)
+
+gender_count$per =
+  gender_count$n/sum(gender_count$n)
+
+# Compute the cumulative percentages (top of each rectangle)
+gender_count$ymax <- 
+  cumsum(gender_count$per)
+
+# Compute the bottom of each rectangle
+gender_count$ymin <- 
+  c(0, head(gender_count$ymax, n=-1))
+
+# Compute label position
+gender_count$labelPosition <- 
+  (gender_count$ymax + gender_count$ymin) / 2
+
+# Compute a good label
+gender_count$label <- 
+  paste(gender_count$n,"(") %>% 
+  paste0((100*gender_count$per) %>% round(), "%)")
+
+# Make the plot
+gender_donut <-
+gender_count %>% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=gender)) +
+  geom_rect() +
+  scale_fill_viridis(discrete = T, direction = -1)+
+  coord_polar(theta="y") +
+  xlim(c(2, 4)) +
+  theme_void() +
+  theme() +
+  labs(fill="Gender") +
+  theme(text=element_text(size=15,  family="Courier"),
+                 legend.position = "bottom",
+                 legend.direction = "horizontal" ) +
+  guides(fill= guide_legend(title.position = "top",title.hjust = .5)) 
+
+gender_donut
+```
+
+```{r gender density, include=FALSE}
+gender_density <-
+survey_US_new %>% 
+  ggplot(aes(y = gender, x = annual_salary, fill = gender, color = gender)) +
+  ggridges::geom_density_ridges() +
+  ggthemes::theme_hc() +
+  scale_color_brewer(palette='Accent', direction = 1)+
+  scale_fill_brewer(palette='Accent', direction = 1)+
+  xlab("Annual Base Salary (USD)") +
+  ylab("") +
+  guides(fill =FALSE, color = FALSE, size = FALSE) +
+  theme(text=element_text(size=15,  family="Courier")) +
+  scale_x_continuous(labels = scales::comma, limits = c(0,400000)) 
+
+gender_density
+```
+
+## Experience Distribution
+
+```{r experience donut}
+# Compute percentages
+overall_years_of_professional_experience_count <-
+  survey_US_new %>%
+  count(overall_years_of_professional_experience)
+
+overall_years_of_professional_experience_count$per =
+  overall_years_of_professional_experience_count$n/sum(overall_years_of_professional_experience_count$n)
+
+# Compute the cumulative percentages (top of each rectangle)
+overall_years_of_professional_experience_count$ymax <- 
+  cumsum(overall_years_of_professional_experience_count$per)
+
+# Compute the bottom of each rectangle
+overall_years_of_professional_experience_count$ymin <- 
+  c(0, head(overall_years_of_professional_experience_count$ymax, n=-1))
+
+# Compute label position
+overall_years_of_professional_experience_count$labelPosition <- 
+  (overall_years_of_professional_experience_count$ymax + overall_years_of_professional_experience_count$ymin) / 2
+
+# Compute a good label
+overall_years_of_professional_experience_count$label <- 
+  paste(overall_years_of_professional_experience_count$n,"(") %>% 
+  paste0((100*overall_years_of_professional_experience_count$per) %>% round(), "%)")
+
+# Make the plot
+experience_donut <-
+overall_years_of_professional_experience_count %>% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=overall_years_of_professional_experience)) +
+  geom_rect() +
+  scale_fill_viridis(discrete = T, direction = -1)+
+  coord_polar(theta="y") +
+  xlim(c(2, 4)) +
+  theme_void() +
+  theme() +
+  labs(fill="Experience") +
+  theme(text=element_text(size=15,  family="Courier"),
+                 legend.position = "bottom",
+                 legend.direction = "horizontal" ) +
+  guides(fill= guide_legend(title.position = "top",title.hjust = .5))
+
+experience_donut
+```
+
+## Education Level
+
+```{r education donut}
+survey_US_new$highest_level_of_education_completed %>% unique()
+# Compute percentages
+highest_level_of_education_completed_count <-
+  survey_US_new %>%
+  ungroup() %>% 
+  select(highest_level_of_education_completed) %>% 
+  drop_na() %>% 
+  count(highest_level_of_education_completed)
+
+highest_level_of_education_completed_count$per =
+  highest_level_of_education_completed_count$n/sum(highest_level_of_education_completed_count$n)
+
+# Compute the cumulative percentages (top of each rectangle)
+highest_level_of_education_completed_count$ymax <- 
+  cumsum(highest_level_of_education_completed_count$per)
+
+# Compute the bottom of each rectangle
+highest_level_of_education_completed_count$ymin <- 
+  c(0, head(highest_level_of_education_completed_count$ymax, n=-1))
+
+# Compute label position
+highest_level_of_education_completed_count$labelPosition <- 
+  (highest_level_of_education_completed_count$ymax + highest_level_of_education_completed_count$ymin) / 2
+
+# Compute a good label
+highest_level_of_education_completed_count$label <- 
+  paste(highest_level_of_education_completed_count$n,"(") %>% 
+  paste0((100*highest_level_of_education_completed_count$per) %>% round(), "%)")
+
+# Make the plot
+education_level_donut <-
+highest_level_of_education_completed_count %>% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=highest_level_of_education_completed)) +
+  geom_rect() +
+  scale_fill_viridis(discrete = T, direction = -1)+
+  coord_polar(theta="y") +
+  xlim(c(2, 4)) +
+  theme_void() +
+  theme() +
+  labs(fill= "Highest Education") +
+  theme(text=element_text(size=15,  family="Courier"),
+                 legend.position = "bottom",
+                 legend.direction = "horizontal" ) +
+  guides(fill= guide_legend(title.position = "top",title.hjust = .5))
+
+education_level_donut
+```
+
+## Salary
+
+```{r salary donut}
+survey_US_new$annual_salary_cat <-
+survey_US_new$annual_salary %>% 
+  cut(
+    breaks = c(0,
+               50000,
+               100000,
+               150000,
+               200000,
+               250000,
+               300000,
+               350000,
+               400000,
+               1650000),
+    labels =c(
+           "0k-50k",
+           "50k-100k",
+           "100k-150k",
+           "150k-200k" ,
+           "200k-250k",
+           "250k-300k",
+           "300k-350k",
+           "350k-400k",
+           "Over 400k"),
+    include.lowest = TRUE)
+
+# Compute percentages
+annual_salary_cat_count <-
+  survey_US_new %>%
+  ungroup() %>% 
+  select(annual_salary_cat) %>% 
+  drop_na() %>% 
+  count(annual_salary_cat)
+
+annual_salary_cat_count$per =
+  annual_salary_cat_count$n/sum(annual_salary_cat_count$n)
+
+# Compute the cumulative percentages (top of each rectangle)
+annual_salary_cat_count$ymax <- 
+  cumsum(annual_salary_cat_count$per)
+
+# Compute the bottom of each rectangle
+annual_salary_cat_count$ymin <- 
+  c(0, head(annual_salary_cat_count$ymax, n=-1))
+
+# Compute label position
+annual_salary_cat_count$labelPosition <- 
+  (annual_salary_cat_count$ymax + annual_salary_cat_count$ymin) / 2
+
+# Compute a good label
+annual_salary_cat_count$label <- 
+  paste(annual_salary_cat_count$n,"(") %>% 
+  paste0((100*annual_salary_cat_count$per) %>% round(), "%)")
+
+# Make the plot
+salary_level_donut <-
+annual_salary_cat_count %>% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=annual_salary_cat)) +
+  geom_rect() +
+  scale_fill_viridis(discrete = T,direction = -1)+
+  coord_polar(theta="y") +
+  xlim(c(2, 4)) +
+  theme_void() +
+  theme() +
+  labs(fill="Annual Base Salary (USD)") +
+  theme(text=element_text(size=15,  family="Courier"),
+                 legend.position = "bottom",
+                 legend.direction = "horizontal" ) +
+  guides(fill= guide_legend(title.position = "top",
+                            title.hjust = .5,
+                            byrow = T))
+
+salary_level_donut
+```
+
+```{r salary density, include=FALSE}
+salary_density <-
+survey_US_new %>% 
+  ggplot() +
+  geom_histogram(aes(y = ..count.. , x = annual_salary), 
+                           boundary = 0, closed = "left",bins=50,
+                          color=  "#7FC97F", fill=  "#7FC97F") +
+  ggthemes::theme_hc() +
+  xlab("Annual Base Salary (USD)") +
+  ylab("Number of Respondents") +
+  guides(fill =FALSE, color = FALSE, size = FALSE) +
+  theme(text=element_text(size=15, family="Courier")) +
+  scale_x_continuous(breaks =seq(0,2000000, by= 100000),labels = scales::comma) 
+
+salary_density
+```
+
+```{r salary heatmap}
+salary_gender_experience_heatmap_all <-
+  survey_US_new %>%
+  group_by(gender ,
+           overall_years_of_professional_experience) %>%
+  mutate(median = median(annual_salary, na.rm = T)) %>%
+  unique() %>% 
+  ungroup() %>%
+  select(
+    gender,
+    overall_years_of_professional_experience,
+    median) %>%
+  drop_na() %>% 
+  ggplot(
+    aes(x = overall_years_of_professional_experience, y = gender , fill = median)) +
+  geom_tile() +
+  theme_minimal() +
+  ylab("Gender")+
+  xlab("Experience") +
+  labs(fill="Median Annual Base Salary (USD)")+
+  scale_fill_viridis_c(direction = -1,labels = scales::comma)  +
+  theme(text=element_text(size=15,  family="Courier"),
+                  legend.position = "bottom",
+                  legend.direction = "horizontal" ,
+                 legend.key.width = unit(2, "cm"),
+                 plot.margin=grid::unit(c(1,1,1,1), "cm") ,
+                 panel.border = element_blank(), 
+                 panel.grid.major = element_blank(),
+                 panel.grid.minor = element_blank(),
+                 axis.line = element_blank()
+                ) +
+   guides(fill = guide_colourbar(title.position = "top",
+                                title.hjust = .5,
+                                label.position = "bottom"))
+
+salary_gender_experience_heatmap_all
+
+salary_education_experience_heatmap_all <-
+  survey_US_new %>%
+  group_by(highest_level_of_education_completed ,
+           overall_years_of_professional_experience) %>%
+  mutate(median = median(annual_salary, na.rm = T)) %>%
+  ungroup() %>%
+  select(
+    highest_level_of_education_completed,
+    overall_years_of_professional_experience,
+    median) %>%
+  unique() %>% 
+  drop_na() %>% 
+  ggplot(
+    aes(x = overall_years_of_professional_experience, y = highest_level_of_education_completed , fill = median)) +
+  geom_tile() +
+  theme_minimal() +
+  ylab("Highest Education")+
+  xlab("Experience") +
+  labs(fill="Median Annual Base Salary (USD)")+
+  scale_fill_viridis_c(direction = -1,
+                     labels =scales::comma)  +
+  theme(text=element_text(size=15,  family="Courier"),
+                  legend.position = "bottom",
+                  legend.direction = "horizontal" ,
+                 legend.key.width = unit(2, "cm"),
+                 plot.margin=grid::unit(c(1,1,1,1), "cm") ,
+                 panel.border = element_blank(), 
+                 panel.grid.major = element_blank(),
+                 panel.grid.minor = element_blank(),
+                  axis.line = element_blank()
+                ) +
+   guides(fill = guide_colourbar(title.position = "top",
+                                title.hjust = .5,
+                                label.position = "bottom"))
+
+salary_education_experience_heatmap_all
+```
+
+```{r gender pay gap, include=FALSE}
+gender_pay_gap =
+  survey_US_new %>%
+  group_by(highest_level_of_education_completed ,
+           overall_years_of_professional_experience,
+           gender) %>%
+  mutate(median = median(annual_salary, na.rm = T),
+         n=n()) %>%
+  ungroup() %>%
+  select(
+    highest_level_of_education_completed,
+    overall_years_of_professional_experience,
+    gender,
+    median,
+    n) %>%
+  unique() %>% 
+  drop_na() %>% 
+  arrange(highest_level_of_education_completed ,
+           overall_years_of_professional_experience,
+           gender)
+
+gender_pay_gap_wide =
+  gender_pay_gap %>% 
+  select(-n) %>% 
+  filter(gender %in% c("Woman", "Man")) %>% 
+  group_by(highest_level_of_education_completed ,
+           overall_years_of_professional_experience) %>% 
+  spread(gender,median) %>% 
+  unique() %>% 
+  ungroup() %>% 
+  mutate(median_diff = Man - Woman)
+
+pay_gap_education_experience_heatmap_all <-    
+  gender_pay_gap_wide  %>% 
+  ggplot(
+    aes(x = overall_years_of_professional_experience, y = highest_level_of_education_completed , fill = median_diff)) +
+  geom_tile() +
+  theme_minimal() +
+  ylab("Highest Education")+
+  xlab("Experience") +
+  labs(fill="Annual Base Salary Gap between Man and Woman (USD)")+
+  scale_fill_viridis_c(direction = -1,
+                     labels =scales::comma)  +
+  theme(text=element_text(size=15,  family="Courier"),
+                  legend.position = "bottom",
+                  legend.direction = "horizontal" ,
+                 legend.key.width = unit(2, "cm"),
+                 plot.margin=grid::unit(c(1,1,1,1), "cm") ,
+                 panel.border = element_blank(), 
+                 panel.grid.major = element_blank(),
+                 panel.grid.minor = element_blank(),
+                  axis.line = element_blank()) +
+   guides(fill = guide_colourbar(title.position = "top",
+                                title.hjust = .5,
+                                label.position = "bottom"))
+
+pay_gap_education_experience_heatmap_all
+```
+
+## Final Figure
+
+```{r result}
+final_figure <-
+  ggarrange(
+    ggarrange(gender_donut,
+              education_level_donut,
+              experience_donut,
+              ncol = 3),
+    ggarrange(
+      salary_gender_experience_heatmap_all,
+      salary_education_experience_heatmap_all,
+      ncol = 2,
+      nrow = 1
+    ),
+    ncol = 1,
+    nrow = 2
+  )
+
+annotate_figure(
+  final_figure,
+  top = text_grob(
+    "Overview of US Young Professionals in Tech (n=1,662)",
+    size = 20  ,
+    family = "Courier"
+  ),
+  bottom = text_grob(
+    "Respondents under 35 years old are considered as young professionals.\nTidy Tuesday 18th May 2021 | Created by: Chengyu Ouyang | Data source: Ask a Manager Survey",
+    size = 12,
+    family = "Courier"
+  )
+)
+```
