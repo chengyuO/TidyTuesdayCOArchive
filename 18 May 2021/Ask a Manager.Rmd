@@ -559,7 +559,7 @@ final_figure <-
 annotate_figure(
   final_figure,
   top = text_grob(
-    "Overview of US Young Professionals in Tech (n=1,662)",
+    "US Young Professionals in Tech (n=1,662)",
     size = 20  ,
     family = "Courier"
   ),
