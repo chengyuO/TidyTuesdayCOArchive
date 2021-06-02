@@ -4,4 +4,4 @@ An archive of all data visualization pieces I have done for [\#tidytuesday](http
 
 ## Week of 18 May 2021: Ask A Manager
 
-![](Rplot.jpeg)
+![](Ask%20a%20Manager.jpeg)
