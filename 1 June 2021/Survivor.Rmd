@@ -1,0 +1,189 @@
+---
+title: "Survivor"
+author: "Chengyu"
+date: "03/06/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Section 1: Set up
+
+```{r setup}
+library(survivoR)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(reshape2)
+library(hrbrthemes)
+library(tidyverse)
+library(extrafont)
+#devtools::install_gitlab("hrbrmstr/waffle")
+library(waffle)
+library(ggthemes)
+library(showtext)
+#remotes::install_github("ewenme/ghibli")
+library(ghibli)
+library(ggpubr)
+
+fonttable() %>% 
+  dplyr::filter(stringr::str_detect(FamilyName,"^Font.")) %>% 
+  select(FontName, fontfile)
+
+font_add(family = "FontAwesome", regular = "/Users/montecarlo/Library/Fonts/fa-solid-900.ttf")
+showtext_auto()
+```
+
+# Section 2: Data Cleaning
+
+```{r eda}
+castaways %<>% 
+  arrange(season,order) 
+
+sole_survivor <-
+  castaways %>% 
+  filter(result=="Sole Survivor")
+
+# Personalities of sole survivor
+sole_survivor_personality_type_list <-
+sole_survivor$personality_type %>% 
+ colsplit( "",names = c("Mind", "Energy", "Nature", "Tactics"))
+
+# Mind: Introverted vs. Extraverted
+sole_survivor_personality_type_list$Mind %<>% 
+  as.factor() %>% 
+  fct_recode(Extraverted="E",
+             Introverted="I")
+
+# Energy: Intuitive vs. Observant
+sole_survivor_personality_type_list$Energy %<>% 
+  as.factor() %>% 
+  fct_recode(Observant="S",
+             Intuitive="N")
+
+# Nature: Thinking vs. Feeling
+sole_survivor_personality_type_list$Nature %<>% 
+  as.factor() %>% 
+  fct_recode(Thinking="TRUE",
+             Feeling="FALSE")
+
+# Tactics: Judging vs. Prospecting
+sole_survivor_personality_type_list$Tactics %<>% 
+  as.factor() %>% 
+  fct_recode(Prospecting="P",
+             Judging="J")
+```
+
+# Section 3: Result
+
+```{r single waffle}
+# most common type: Entrepreneur ESTP 
+sole_survivor %>% 
+  count(personality_type) %>% 
+  arrange(desc(n))
+
+Mind<-
+sole_survivor_personality_type_list %>%
+  count(Mind) %>% 
+  ggplot(aes(fill = Mind, values = n)) +
+  geom_waffle(n_rows = 8, size = 0.33, colour = "white", flip = TRUE) +
+  scale_x_discrete(expand=c(0,0)) +
+  scale_y_discrete(expand=c(0,0)) +
+  coord_equal() +
+  theme_enhance_waffle()+
+  theme(text=element_text(size=15,  family="sans" ),     
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key = element_rect(color = "white", fill = NA),
+        legend.key.size =  unit(1, "cm")) +
+  scale_fill_ghibli_d("LaputaMedium", direction = -1) 
+
+Mind
+
+Energy<-
+sole_survivor_personality_type_list %>%
+  count(Energy) %>% 
+  ggplot(aes(fill = Energy, values = n)) +
+  geom_waffle(n_rows = 8, size = 0.33, colour = "white", flip = TRUE) +
+  scale_x_discrete(expand=c(0,0)) +
+  scale_y_discrete(expand=c(0,0)) +
+  coord_equal() +
+  theme_enhance_waffle()+
+  theme(text=element_text(size=15,  family="sans" ),     
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key = element_rect(color = "white", fill = NA),
+        legend.key.size =  unit(1, "cm")) +
+  scale_fill_ghibli_d("LaputaMedium", direction = -1) 
+
+Energy
+
+Nature<-
+sole_survivor_personality_type_list %>%
+  count(Nature) %>% 
+  ggplot(aes(fill = Nature, values = n)) +
+  geom_waffle(n_rows = 8, size = 0.33, colour = "white", flip = TRUE) +
+  scale_x_discrete(expand=c(0,0)) +
+  scale_y_discrete(expand=c(0,0)) +
+  coord_equal() +
+  theme_enhance_waffle()+
+  theme(text=element_text(size=15,  family="sans" ),     
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key = element_rect(color = "white", fill = NA),
+        legend.key.size =  unit(1, "cm")) +
+  scale_fill_ghibli_d("LaputaMedium", direction = -1) 
+
+Nature
+
+Tactics<-
+sole_survivor_personality_type_list %>%
+  count(Tactics) %>% 
+  ggplot(aes(fill = Tactics, values = n)) +
+  geom_waffle(n_rows = 8, size = 0.33,  colour = "white", flip = TRUE) +
+  scale_x_discrete(expand=c(0,0)) +
+  scale_y_discrete(expand=c(0,0)) +
+  coord_equal() +
+  theme_enhance_waffle()+
+  theme(text=element_text(size=15,  family="sans" ),     
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key = element_rect(color = "white", fill = NA),
+        legend.key.size =  unit(1, "cm")) +
+  scale_fill_ghibli_d("LaputaMedium", direction = -1) 
+
+Tactics
+```
+
+```{r final}
+final_figure<-
+ggarrange(Mind,
+          Energy,
+          Nature, 
+          Tactics,
+    ncol = 2,
+    nrow = 2
+  )
+
+final_figure<-
+annotate_figure(
+  final_figure,
+  top = text_grob(
+    "Personality Type of Sole Survivor",
+    size = 20  ,
+    family = "sans"
+  ),
+  bottom = text_grob(
+    "Based on results from 40 seasons of Survivor, an Entrepreneur (ESTP) is most likely to be the sole survivor in the show. \nTidy Tuesday 1st June 2021 | Created by: Chengyu Ouyang | Data source: survivoR",
+    size = 12,
+    family = "sans"
+  )
+)
+
+final_figure
+
+ggsave(plot=final_figure,"SurvivoR.jpg", width = 25, height = 20, units = "cm")
+
+```
+
